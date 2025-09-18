@@ -387,7 +387,7 @@ class RoomIO:
             if self._user_tr_output is None:
                 continue
 
-            await self._user_tr_output.capture_text(ev.transcript)
+            await self._user_tr_output.capture_text(ev.transcript) # User transcript
             if ev.is_final:
                 self._user_tr_output.flush()
 
@@ -440,6 +440,7 @@ class RoomIO:
             self._agent_session._close_soon(reason=CloseReason.PARTICIPANT_DISCONNECTED)
 
     def _on_user_input_transcribed(self, ev: UserInputTranscribedEvent) -> None:
+        # forward to user transcription output
         if self._user_transcript_atask:
             self._user_transcript_ch.send_nowait(ev)
 

@@ -240,6 +240,7 @@ async def _text_forwarding_task(
     source: AsyncIterable[str],
     out: _TextOutput,
 ) -> None:
+    # Only fires on agent speech
     try:
         async for delta in source:
             out.text += delta
