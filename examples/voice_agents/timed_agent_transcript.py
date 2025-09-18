@@ -14,12 +14,10 @@ from livekit.agents import (
     WorkerOptions,
     cli,
 )
-from livekit.agents.types import TOPIC_TRANSCRIPTION
-from livekit.agents.voice import UserInputTranscribedEvent
+from livekit.agents.voice import ConversationItemAddedEvent, UserInputTranscribedEvent
 from livekit.agents.voice.agent import ModelSettings
 from livekit.agents.voice.io import TimedString
 from livekit.plugins import elevenlabs, deepgram, openai, silero
-from livekit.rtc.data_stream import TextStreamReader
 
 logger = logging.getLogger("my-worker")
 logger.setLevel(logging.INFO)
@@ -67,9 +65,12 @@ async def entrypoint(ctx: JobContext):
         # enable TTS-aligned transcript, can be configured at the Agent level as well
         use_tts_aligned_transcript=True,
     )
+    last_user_input_transcribed_event: UserInputTranscribedEvent | None = None
+    last_user_conversation_item_event: ConversationItemAddedEvent | None = None
 
     @session.on("user_input_transcribed")
     def _on_user_input_transcribed(event: UserInputTranscribedEvent):
+        nonlocal last_user_input_transcribed_event
         timing_info = ""
         if event.start_time is not None and event.end_time is not None:
             duration = event.end_time - event.start_time
@@ -78,37 +79,41 @@ async def entrypoint(ctx: JobContext):
         logger.info(
             f"User {'FINAL' if event.is_final else 'INTERIM'} transcript: '{event.transcript}'{timing_info}"
         )
+        if event.is_final:
+            last_user_input_transcribed_event = event
+            annotate_conversation_items()
+
+    @session.on("conversation_item_added")
+    def _on_conversation_item_added(event: ConversationItemAddedEvent):
+        if event.item.role != "user":
+            return
+
+        nonlocal last_user_conversation_item_event
+        last_user_conversation_item_event = event
+        annotate_conversation_items()
+        logger.info(f"User added conversation item: {event.item}")
+
+    def annotate_conversation_items():
+        nonlocal last_user_input_transcribed_event, last_user_conversation_item_event
+        if last_user_input_transcribed_event and last_user_conversation_item_event:
+            if (
+                last_user_input_transcribed_event.transcript
+                == last_user_conversation_item_event.item.content[0]
+            ):
+                logger.info(
+                    "Annotating conversation item with timing info",
+                    extra={
+                        "start_time": last_user_input_transcribed_event.start_time,
+                        "end_time": last_user_input_transcribed_event.end_time,
+                    },
+                )
+                last_user_conversation_item_event, last_user_input_transcribed_event = None, None
 
     await session.start(agent=MyAgent(), room=ctx.room)
 
     @session.on("agent_state_changed")
     def _handle_agent_state_changed(event: AgentStateChangedEvent):
         logger.info(f"Agent state changed: {event.old_state} -> {event.new_state}")
-
-    def log_transcripts(reader: TextStreamReader, participant_id: str):
-        logger.info(f"Transcribing text: {participant_id}")
-        stream_id = reader.info.stream_id
-        segment_id = reader.info.attributes.get("segment_id", None)
-        if not segment_id:
-            logger.warning("No segment id found for text stream")
-            return
-
-        async def _log():
-            track_id = reader.info.attributes.get("track_id", None)
-            async for chunk in reader:
-                is_final = chunk.attributes.get("final", "false").lower() == "true"
-                content = chunk.text
-                logger.info(
-                    f"[{participant_id}] ({'FINAL' if is_final else 'INTERIM'}) {content} (stream: {stream_id}, segment: {segment_id}, track: {track_id})"
-                )
-
-            # update the final flag
-            final = reader.info.attributes.get("final", "null")
-            logger.info(
-                f"[{participant_id}] FINAL '' (stream: {stream_id}, segment: {segment_id}, track: {track_id}, final: {final})"
-            )
-
-        asyncio.create_task(_log())
 
     await session.start(
         agent=MyAgent(),
@@ -118,12 +123,6 @@ async def entrypoint(ctx: JobContext):
             transcription_enabled=True,
         ),
     )
-    session._room_io._room.register_text_stream_handler(TOPIC_TRANSCRIPTION, log_transcripts)
-
-    # ctx.room.register_text_stream_handler(
-    #     TOPIC_TRANSCRIPTION,
-    #     log_transcripts
-    # )
 
     session.generate_reply(instructions="say hello to the user")
 

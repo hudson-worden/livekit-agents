@@ -426,10 +426,10 @@ class _ParticipantStreamTranscriptionOutput:
                     if self._writer is None:
                         self._writer = await self._create_text_writer()
 
-                    await self._writer.write(text) # Agent
+                    await self._writer.write(text)  # Agent
                 else:  # always create a new writer
                     tmp_writer = await self._create_text_writer()
-                    await tmp_writer.write(text) # User
+                    await tmp_writer.write(text)  # User
                     await tmp_writer.aclose()
         except Exception as e:
             logger.warning("failed to publish transcription", exc_info=e)

@@ -387,7 +387,7 @@ class RoomIO:
             if self._user_tr_output is None:
                 continue
 
-            await self._user_tr_output.capture_text(ev.transcript) # User transcript
+            await self._user_tr_output.capture_text(ev.transcript)  # User transcript
             if ev.is_final:
                 self._user_tr_output.flush()
 
