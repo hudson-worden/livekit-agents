@@ -76,10 +76,11 @@ async def entrypoint(ctx: JobContext):
             duration = event.end_time - event.start_time
             timing_info = f" (start: {event.start_time:.3f}s, end: {event.end_time:.3f}s, duration: {duration:.3f}s)"
 
-        logger.info(
-            f"User {'FINAL' if event.is_final else 'INTERIM'} transcript: '{event.transcript}'{timing_info}"
-        )
+
         if event.is_final:
+            logger.info(
+                f"User                   {timing_info}- {'FINAL' if event.is_final else 'INTERIM'} transcript: '{event.transcript}'"
+            )
             last_user_input_transcribed_event = event
             annotate_conversation_items()
 
@@ -91,7 +92,7 @@ async def entrypoint(ctx: JobContext):
         nonlocal last_user_conversation_item_event
         last_user_conversation_item_event = event
         annotate_conversation_items()
-        logger.info(f"User added conversation item: {event.item}")
+        # logger.info(f"User added conversation item: {event.item}")
 
     def annotate_conversation_items():
         nonlocal last_user_input_transcribed_event, last_user_conversation_item_event
@@ -100,27 +101,33 @@ async def entrypoint(ctx: JobContext):
                 last_user_input_transcribed_event.transcript
                 == last_user_conversation_item_event.item.content[0]
             ):
-                logger.info(
-                    "Annotating conversation item with timing info",
-                    extra={
-                        "start_time": last_user_input_transcribed_event.start_time,
-                        "end_time": last_user_input_transcribed_event.end_time,
-                    },
-                )
+                # logger.info(
+                #     "Annotating conversation item with timing info ",
+                #     extra={
+                #         "start_time": last_user_input_transcribed_event.start_time,
+                #         "end_time": last_user_input_transcribed_event.end_time,
+                #     },
+                # )
                 last_user_conversation_item_event, last_user_input_transcribed_event = None, None
 
     await session.start(agent=MyAgent(), room=ctx.room)
 
-    @session.on("agent_state_changed")
-    def _handle_agent_state_changed(event: AgentStateChangedEvent):
-        logger.info(f"Agent state changed: {event.old_state} -> {event.new_state}")
+    # @session.on("agent_state_changed")
+    # def _handle_agent_state_changed(event: AgentStateChangedEvent):
+    #     logger.info(f"Agent state changed: {event.old_state} -> {event.new_state}")
 
 
     @session.output.audio.on("playback_finished")
     def _handle_playback_finished(event: PlaybackFinishedEvent):
-        logger.info(f"Playback finished: {event.playback_position} ({'interrupted' if event.interrupted else 'completed'})")
+        # logger.info(f"Playback finished: {event.playback_position} ({'interrupted' if event.interrupted else 'completed'})")
+        start = event.playback_start_time
+        end = event.playback_start_time + event.playback_position
+        duration = event.playback_position
+        timing_info = f"(start: {start:3f}s, end: {end:3f}s, duration: {duration:3f}s)"
         if event.synchronized_transcript:
-            logger.info(f"Synchronized transcript: {event.synchronized_transcript} - start ({event.playback_start_time}) ")
+            logger.info(
+                f"Agent                   {timing_info}: {event.synchronized_transcript}",
+            )
 
     await session.start(
         agent=MyAgent(),

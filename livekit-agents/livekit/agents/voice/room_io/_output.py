@@ -167,7 +167,7 @@ class _ParticipantAudioOutput(io.AudioOutput):
 
         self._pushed_duration = 0
         self._interrupted_event.clear()
-        self.on_playback_finished(playback_start_time=time.monotonic() - self._start_time, playback_position=pushed_duration, interrupted=interrupted)
+        self.on_playback_finished(playback_start_time=time.monotonic() - self._start_time - pushed_duration, playback_position=pushed_duration, interrupted=interrupted)
 
     async def _forward_audio(self) -> None:
         async for frame in self._audio_buf:
