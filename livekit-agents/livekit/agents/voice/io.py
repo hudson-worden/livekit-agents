@@ -123,6 +123,7 @@ class VideoInput:
 
 @dataclass
 class PlaybackFinishedEvent:
+
     playback_position: float
     """How much of the audio was played back"""
     interrupted: bool
@@ -131,6 +132,7 @@ class PlaybackFinishedEvent:
     """Transcript synced with playback; may be partial if the audio was interrupted
     When None, the transcript is not synchronized with the playback"""
 
+    playback_start_time: float | None = None
 
 @dataclass
 class AudioOutputCapabilities:
@@ -171,6 +173,7 @@ class AudioOutput(ABC, rtc.EventEmitter[Literal["playback_finished"]]):
                     interrupted=ev.interrupted,
                     playback_position=ev.playback_position,
                     synchronized_transcript=ev.synchronized_transcript,
+                    playback_start_time=ev.playback_start_time,
                 ),
             )
 
@@ -188,6 +191,7 @@ class AudioOutput(ABC, rtc.EventEmitter[Literal["playback_finished"]]):
         playback_position: float,
         interrupted: bool,
         synchronized_transcript: str | None = None,
+        playback_start_time: float | None = None,
     ) -> None:
         """
         Developers building audio sinks must call this method when a playback/segment is finished.
@@ -204,6 +208,7 @@ class AudioOutput(ABC, rtc.EventEmitter[Literal["playback_finished"]]):
         self.__playback_finished_event.set()
 
         ev = PlaybackFinishedEvent(
+            playback_start_time=playback_start_time,
             playback_position=playback_position,
             interrupted=interrupted,
             synchronized_transcript=synchronized_transcript,

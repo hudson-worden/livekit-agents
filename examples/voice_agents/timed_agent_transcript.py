@@ -120,7 +120,7 @@ async def entrypoint(ctx: JobContext):
     def _handle_playback_finished(event: PlaybackFinishedEvent):
         logger.info(f"Playback finished: {event.playback_position} ({'interrupted' if event.interrupted else 'completed'})")
         if event.synchronized_transcript:
-            logger.info(f"Synchronized transcript: {event.synchronized_transcript}")
+            logger.info(f"Synchronized transcript: {event.synchronized_transcript} - start ({event.playback_start_time}) ")
 
     await session.start(
         agent=MyAgent(),

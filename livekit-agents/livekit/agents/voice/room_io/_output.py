@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 from livekit import rtc
 
@@ -53,6 +54,7 @@ class _ParticipantAudioOutput(io.AudioOutput):
         self._forwarding_task: asyncio.Task[None] | None = None
 
         self._pushed_duration: float = 0.0
+        self._start_time: float = time.monotonic()
 
         self._playback_enabled = asyncio.Event()
         self._playback_enabled.set()
@@ -165,7 +167,7 @@ class _ParticipantAudioOutput(io.AudioOutput):
 
         self._pushed_duration = 0
         self._interrupted_event.clear()
-        self.on_playback_finished(playback_position=pushed_duration, interrupted=interrupted)
+        self.on_playback_finished(playback_start_time=time.monotonic() - self._start_time, playback_position=pushed_duration, interrupted=interrupted)
 
     async def _forward_audio(self) -> None:
         async for frame in self._audio_buf:

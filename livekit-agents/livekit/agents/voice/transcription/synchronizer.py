@@ -403,8 +403,10 @@ class TranscriptSynchronizer:
     ) -> None:
         super().__init__()
 
+        # Add starting timestamp here
+        self._start_time = time.monotonic()
         self._text_output = _SyncedTextOutput(self, next_in_chain=next_in_chain_text)
-        self._audio_output = _SyncedAudioOutput(self, next_in_chain=next_in_chain_audio)
+        self._audio_output = _SyncedAudioOutput(self, next_in_chain=next_in_chain_audio, start_time=self._start_time)
         self._text_attached, self._audio_attached = True, True
         self._opts = _TextSyncOptions(
             speed=speed,
@@ -497,7 +499,7 @@ class TranscriptSynchronizer:
 
 class _SyncedAudioOutput(io.AudioOutput):
     def __init__(
-        self, synchronizer: TranscriptSynchronizer, *, next_in_chain: io.AudioOutput
+        self, synchronizer: TranscriptSynchronizer, *, next_in_chain: io.AudioOutput, start_time: float
     ) -> None:
         super().__init__(
             label="TranscriptSynchronizer",
@@ -509,6 +511,7 @@ class _SyncedAudioOutput(io.AudioOutput):
         self._synchronizer = synchronizer
         self._capturing = False
         self._pushed_duration: float = 0.0
+        self._start_time = start_time
 
     async def capture_frame(self, frame: rtc.AudioFrame) -> None:
         # using barrier() on capture should be sufficient, flush() must not be called if
@@ -559,12 +562,14 @@ class _SyncedAudioOutput(io.AudioOutput):
         playback_position: float,
         interrupted: bool,
         synchronized_transcript: str | None = None,
+        playback_start_time: float | None = None,
     ) -> None:
         if not self._synchronizer.enabled:
             super().on_playback_finished(
                 playback_position=playback_position,
                 interrupted=interrupted,
                 synchronized_transcript=synchronized_transcript,
+                playback_start_time=playback_start_time
             )
             return
 
@@ -575,6 +580,7 @@ class _SyncedAudioOutput(io.AudioOutput):
             playback_position=playback_position,
             interrupted=interrupted,
             synchronized_transcript=self._synchronizer._impl.synchronized_transcript,
+            playback_start_time=playback_start_time
         )
 
         self._synchronizer.rotate_segment()
