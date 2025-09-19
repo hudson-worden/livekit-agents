@@ -16,7 +16,7 @@ from livekit.agents import (
 )
 from livekit.agents.voice import ConversationItemAddedEvent, UserInputTranscribedEvent
 from livekit.agents.voice.agent import ModelSettings
-from livekit.agents.voice.io import TimedString
+from livekit.agents.voice.io import PlaybackFinishedEvent, TimedString
 from livekit.plugins import elevenlabs, deepgram, openai, silero
 
 logger = logging.getLogger("my-worker")
@@ -114,6 +114,13 @@ async def entrypoint(ctx: JobContext):
     @session.on("agent_state_changed")
     def _handle_agent_state_changed(event: AgentStateChangedEvent):
         logger.info(f"Agent state changed: {event.old_state} -> {event.new_state}")
+
+
+    @session.output.audio.on("playback_finished")
+    def _handle_playback_finished(event: PlaybackFinishedEvent):
+        logger.info(f"Playback finished: {event.playback_position} ({'interrupted' if event.interrupted else 'completed'})")
+        if event.synchronized_transcript:
+            logger.info(f"Synchronized transcript: {event.synchronized_transcript}")
 
     await session.start(
         agent=MyAgent(),
