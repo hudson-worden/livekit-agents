@@ -152,9 +152,24 @@ class AudioRecognition:
         if not self._user_turn_span or not self._user_turn_span.is_recording():
             return
 
-        with tracer.start_as_current_span(event, context=trace.set_span_in_context(self._user_turn_span)) as span:
-            if attributes:
-                span.set_attributes(attributes)
+        try:
+            parent_ctx = trace.set_span_in_context(self._user_turn_span)
+            # give the child span a short, non-zero duration so APMs surface it
+            end_ns = time.time_ns()
+            start_ns = max(0, end_ns - 1_000_000)  # 1ms duration
+            with tracer.start_as_current_span(event, context=parent_ctx, start_time=start_ns) as span:
+                if attributes:
+                    span.set_attributes(attributes)
+                try:
+                    span.end(end_time=end_ns)
+                except Exception:
+                    try:
+                        span.end()
+                    except Exception:
+                        pass
+        except Exception:
+            # swallow errors to avoid telemetry impacting flow
+            pass
 
     def update_options(
         self,

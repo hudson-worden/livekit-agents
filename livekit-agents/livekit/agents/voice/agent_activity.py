@@ -1449,8 +1449,23 @@ class AgentActivity(RecognitionHooks):
         current_span = trace.get_current_span()
 
         def _trace_hook_decision(**attributes: str | int) -> None:
-            with tracer.start_as_current_span("turn_detection.eou.hook_decision") as decision_span:
-                decision_span.set_attributes(attributes)
+            try:
+                parent_ctx = trace.set_span_in_context(current_span)
+                end_ns = time.time_ns()
+                start_ns = max(0, end_ns - 1_000_000)
+                with tracer.start_as_current_span(
+                    "turn_detection.eou.hook_decision", context=parent_ctx, start_time=start_ns
+                ) as decision_span:
+                    decision_span.set_attributes(attributes)
+                    try:
+                        decision_span.end(end_time=end_ns)
+                    except Exception:
+                        try:
+                            decision_span.end()
+                        except Exception:
+                            pass
+            except Exception:
+                pass
 
         if self._scheduling_paused:
             current_span.set_attributes(
