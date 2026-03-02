@@ -1448,6 +1448,10 @@ class AgentActivity(RecognitionHooks):
 
         current_span = trace.get_current_span()
 
+        def _trace_hook_decision(**attributes: str | int) -> None:
+            with tracer.start_as_current_span("turn_detection.eou.hook_decision") as decision_span:
+                decision_span.set_attributes(attributes)
+
         if self._scheduling_paused:
             current_span.set_attributes(
                 {
@@ -1455,12 +1459,11 @@ class AgentActivity(RecognitionHooks):
                     "lk.turn.end_reason": "scheduling_paused",
                 }
             )
-            current_span.add_event(
-                "turn_detection.eou.hook_decision",
-                attributes={
+            _trace_hook_decision(
+                **{
                     "lk.turn.end_decision": "commit",
                     "lk.turn.end_reason": "scheduling_paused",
-                },
+                }
             )
             self._cancel_preemptive_generation()
             logger.warning(
@@ -1501,12 +1504,11 @@ class AgentActivity(RecognitionHooks):
                     ),
                 }
             )
-            current_span.add_event(
-                "turn_detection.eou.hook_decision",
-                attributes={
+            _trace_hook_decision(
+                **{
                     "lk.turn.end_decision": "keep_open",
                     "lk.turn.end_reason": "min_interruption_words_guard",
-                },
+                }
             )
             self._cancel_preemptive_generation()
             # avoid interruption if the new_transcript is too short
@@ -1523,12 +1525,11 @@ class AgentActivity(RecognitionHooks):
                 "lk.turn.end_reason": "accepted",
             }
         )
-        current_span.add_event(
-            "turn_detection.eou.hook_decision",
-            attributes={
+        _trace_hook_decision(
+            **{
                 "lk.turn.end_decision": "commit",
                 "lk.turn.end_reason": "accepted",
-            },
+            }
         )
         return True
 

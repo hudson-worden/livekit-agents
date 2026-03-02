@@ -152,9 +152,9 @@ class AudioRecognition:
         if not self._user_turn_span or not self._user_turn_span.is_recording():
             return
 
-        if attributes:
-            self._user_turn_span.set_attributes(attributes)
-        self._user_turn_span.add_event(event, attributes=attributes)
+        with tracer.start_as_current_span(event, context=trace.set_span_in_context(self._user_turn_span)) as span:
+            if attributes:
+                span.set_attributes(attributes)
 
     def update_options(
         self,
