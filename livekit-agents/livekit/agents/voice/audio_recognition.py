@@ -148,6 +148,29 @@ class AudioRecognition:
         self._user_turn_span: trace.Span | None = None
         self._closing = asyncio.Event()
 
+    def _annotate_user_turn(self, event: str, **attributes: bool | int | float | str) -> None:
+        if not self._user_turn_span or not self._user_turn_span.is_recording():
+            return
+
+        try:
+            parent_ctx = trace.set_span_in_context(self._user_turn_span)
+            # give the child span a short, non-zero duration so APMs surface it
+            end_ns = time.time_ns()
+            start_ns = max(0, end_ns - 1_000_000)  # 1ms duration
+            with tracer.start_as_current_span(event, context=parent_ctx, start_time=start_ns) as span:
+                if attributes:
+                    span.set_attributes(attributes)
+                try:
+                    span.end(end_time=end_ns)
+                except Exception:
+                    try:
+                        span.end()
+                    except Exception:
+                        pass
+        except Exception:
+            # swallow errors to avoid telemetry impacting flow
+            pass
+
     def update_options(
         self,
         *,
@@ -466,6 +489,15 @@ class AudioRecognition:
             with trace.use_span(self._ensure_user_turn_span()):
                 self._hooks.on_end_of_speech(None)
 
+            self._annotate_user_turn(
+                "turn_detection.stt.end_of_speech",
+                **{
+                    "lk.turn.mode": self._turn_detection_mode,
+                    "lk.turn.has_vad": self._vad is not None,
+                    "lk.turn.user_turn_committed": self._user_turn_committed,
+                },
+            )
+
             self._speaking = False
             self._user_turn_committed = True
             if not self._vad or self._last_speaking_time is None:
@@ -478,25 +510,48 @@ class AudioRecognition:
             with trace.use_span(self._ensure_user_turn_span()):
                 self._hooks.on_start_of_speech(None)
 
+            self._annotate_user_turn(
+                "turn_detection.stt.start_of_speech",
+                **{"lk.turn.mode": self._turn_detection_mode},
+            )
+
             self._speaking = True
             if self._speech_start_time is None:
                 self._speech_start_time = time.time()
             self._last_speaking_time = time.time()
 
             if self._end_of_turn_task is not None:
+                self._annotate_user_turn(
+                    "turn_detection.eou_task.cancelled",
+                    **{"lk.turn.cancel_reason": "stt_start_of_speech"},
+                )
                 self._end_of_turn_task.cancel()
 
     @utils.log_exceptions(logger=logger)
     async def _on_vad_event(self, ev: vad.VADEvent) -> None:
         if ev.type == vad.VADEventType.START_OF_SPEECH:
-            with trace.use_span(
-                self._ensure_user_turn_span(start_time=time.time() - ev.speech_duration)
-            ):
+            start_of_speech = time.time() - ev.speech_duration
+            with trace.use_span(self._ensure_user_turn_span(start_time=start_of_speech)):
+                if self._speech_start_time is None:
+                    self._speech_start_time = start_of_speech
+
                 self._hooks.on_start_of_speech(ev)
+
+            self._annotate_user_turn(
+                "turn_detection.vad.start_of_speech",
+                **{
+                    "lk.turn.mode": self._turn_detection_mode or "auto",
+                    "lk.turn.vad_speech_duration": ev.speech_duration,
+                },
+            )
 
             self._speaking = True
 
             if self._end_of_turn_task is not None:
+                self._annotate_user_turn(
+                    "turn_detection.eou_task.cancelled",
+                    **{"lk.turn.cancel_reason": "vad_start_of_speech"},
+                )
                 self._end_of_turn_task.cancel()
 
         elif ev.type == vad.VADEventType.INFERENCE_DONE:
@@ -506,24 +561,39 @@ class AudioRecognition:
             if ev.raw_accumulated_speech > 0.0:
                 self._last_speaking_time = time.time()
 
-                if self._speech_start_time is None:
-                    self._speech_start_time = time.time()
-
         elif ev.type == vad.VADEventType.END_OF_SPEECH:
             with trace.use_span(self._ensure_user_turn_span()):
                 self._hooks.on_end_of_speech(ev)
 
             self._speaking = False
 
-            if self._vad_base_turn_detection or (
+            should_run_eou = self._vad_base_turn_detection or (
                 self._turn_detection_mode == "stt" and self._user_turn_committed
-            ):
+            )
+            self._annotate_user_turn(
+                "turn_detection.vad.end_of_speech",
+                **{
+                    "lk.turn.mode": self._turn_detection_mode or "auto",
+                    "lk.turn.vad_base_turn_detection": self._vad_base_turn_detection,
+                    "lk.turn.user_turn_committed": self._user_turn_committed,
+                    "lk.turn.will_run_eou": should_run_eou,
+                },
+            )
+
+            if should_run_eou:
                 chat_ctx = self._hooks.retrieve_chat_ctx().copy()
                 self._run_eou_detection(chat_ctx)
 
     def _run_eou_detection(self, chat_ctx: llm.ChatContext, skip_reply: bool = False) -> None:
-        if self._stt and not self._audio_transcript and self._turn_detection_mode != "manual":
+        if self._stt and not self._audio_transcript and self._turn_detection_mode == "stt":
             # stt enabled but no transcript yet
+            self._annotate_user_turn(
+                "turn_detection.eou.skipped",
+                **{
+                    "lk.turn.skip_reason": "stt_enabled_without_transcript",
+                    "lk.turn.mode": self._turn_detection_mode or "auto",
+                },
+            )
             return
 
         chat_ctx = chat_ctx.copy()
@@ -542,6 +612,15 @@ class AudioRecognition:
         ) -> None:
             endpointing_delay = self._min_endpointing_delay
             user_turn_span = self._ensure_user_turn_span()
+            self._annotate_user_turn(
+                "turn_detection.eou.started",
+                **{
+                    "lk.turn.mode": self._turn_detection_mode or "auto",
+                    "lk.turn.endpointing_delay_min": self._min_endpointing_delay,
+                    "lk.turn.endpointing_delay_max": self._max_endpointing_delay,
+                    "lk.turn.has_turn_detector": turn_detector is not None,
+                },
+            )
             if turn_detector is not None:
                 if not await turn_detector.supports_language(self._last_language):
                     logger.info("Turn detector does not support language %s", self._last_language)
@@ -626,16 +705,26 @@ class AudioRecognition:
                 transcription_delay = max(last_final_transcript_time - last_speaking_time, 0)
                 end_of_turn_delay = time.time() - last_speaking_time
 
-            committed = self._hooks.on_end_of_turn(
-                _EndOfTurnInfo(
-                    skip_reply=skip_reply,
-                    new_transcript=self._audio_transcript,
-                    transcript_confidence=confidence_avg,
-                    transcription_delay=transcription_delay or 0,
-                    end_of_turn_delay=end_of_turn_delay,
-                    started_speaking_at=started_speaking_at,
-                    stopped_speaking_at=stopped_speaking_at,
+            with trace.use_span(user_turn_span):
+                committed = self._hooks.on_end_of_turn(
+                    _EndOfTurnInfo(
+                        skip_reply=skip_reply,
+                        new_transcript=self._audio_transcript,
+                        transcript_confidence=confidence_avg,
+                        transcription_delay=transcription_delay or 0,
+                        end_of_turn_delay=end_of_turn_delay,
+                        started_speaking_at=started_speaking_at,
+                        stopped_speaking_at=stopped_speaking_at,
+                    )
                 )
+
+            self._annotate_user_turn(
+                "turn_detection.eou.decision",
+                **{
+                    "lk.turn.committed": committed,
+                    "lk.turn.transcript_len": len(self._audio_transcript),
+                    "lk.turn.skip_reply": skip_reply,
+                },
             )
             if committed:
                 user_turn_span.set_attributes(
@@ -655,11 +744,20 @@ class AudioRecognition:
                 self._last_speaking_time = None
                 self._last_final_transcript_time = None
                 self._speech_start_time = None
+            else:
+                self._annotate_user_turn(
+                    "turn_detection.eou.not_committed",
+                    **{"lk.turn.open_reason": "hooks_on_end_of_turn_returned_false"},
+                )
 
             self._user_turn_committed = False
 
         if self._end_of_turn_task is not None:
             # TODO(theomonnom): disallow cancel if the extra sleep is done
+            self._annotate_user_turn(
+                "turn_detection.eou_task.cancelled",
+                **{"lk.turn.cancel_reason": "retriggered_run_eou_detection"},
+            )
             self._end_of_turn_task.cancel()
 
         # copy the last_speaking_time before awaiting (the value can change)

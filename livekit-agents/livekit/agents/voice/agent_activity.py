@@ -1446,7 +1446,40 @@ class AgentActivity(RecognitionHooks):
         # IMPORTANT: This method is sync to avoid it being cancelled by the AudioRecognition
         # We explicitly create a new task here
 
+        current_span = trace.get_current_span()
+
+        def _trace_hook_decision(**attributes: str | int) -> None:
+            try:
+                parent_ctx = trace.set_span_in_context(current_span)
+                end_ns = time.time_ns()
+                start_ns = max(0, end_ns - 1_000_000)
+                with tracer.start_as_current_span(
+                    "turn_detection.eou.hook_decision", context=parent_ctx, start_time=start_ns
+                ) as decision_span:
+                    decision_span.set_attributes(attributes)
+                    try:
+                        decision_span.end(end_time=end_ns)
+                    except Exception:
+                        try:
+                            decision_span.end()
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
         if self._scheduling_paused:
+            current_span.set_attributes(
+                {
+                    "lk.turn.end_decision": "commit",
+                    "lk.turn.end_reason": "scheduling_paused",
+                }
+            )
+            _trace_hook_decision(
+                **{
+                    "lk.turn.end_decision": "commit",
+                    "lk.turn.end_reason": "scheduling_paused",
+                }
+            )
             self._cancel_preemptive_generation()
             logger.warning(
                 "skipping user input, speech scheduling is paused",
@@ -1476,6 +1509,22 @@ class AgentActivity(RecognitionHooks):
             and len(split_words(info.new_transcript, split_character=True))
             < self._session.options.min_interruption_words
         ):
+            current_span.set_attributes(
+                {
+                    "lk.turn.end_decision": "keep_open",
+                    "lk.turn.end_reason": "min_interruption_words_guard",
+                    "lk.turn.min_interruption_words": self._session.options.min_interruption_words,
+                    "lk.turn.transcript_word_count": len(
+                        split_words(info.new_transcript, split_character=True)
+                    ),
+                }
+            )
+            _trace_hook_decision(
+                **{
+                    "lk.turn.end_decision": "keep_open",
+                    "lk.turn.end_reason": "min_interruption_words_guard",
+                }
+            )
             self._cancel_preemptive_generation()
             # avoid interruption if the new_transcript is too short
             return False
@@ -1484,6 +1533,18 @@ class AgentActivity(RecognitionHooks):
         self._user_turn_completed_atask = self._create_speech_task(
             self._user_turn_completed_task(old_task, info),
             name="AgentActivity._user_turn_completed_task",
+        )
+        current_span.set_attributes(
+            {
+                "lk.turn.end_decision": "commit",
+                "lk.turn.end_reason": "accepted",
+            }
+        )
+        _trace_hook_decision(
+            **{
+                "lk.turn.end_decision": "commit",
+                "lk.turn.end_reason": "accepted",
+            }
         )
         return True
 
