@@ -489,9 +489,7 @@ class AudioRecognition:
     @utils.log_exceptions(logger=logger)
     async def _on_vad_event(self, ev: vad.VADEvent) -> None:
         if ev.type == vad.VADEventType.START_OF_SPEECH:
-            speech_start_time = (
-                time.time() - ev.speech_duration - ev.extra_inference_time
-            )
+            speech_start_time = time.time() - ev.speech_duration
             self._speech_start_time = speech_start_time
             with trace.use_span(
                 self._ensure_user_turn_span(start_time=speech_start_time)
@@ -508,21 +506,17 @@ class AudioRecognition:
 
             # for metrics, get the "earliest" signal of speech as possible
             if ev.raw_accumulated_speech > 0.0:
-                self._last_speaking_time = time.time() - ev.extra_inference_time
+                self._last_speaking_time = time.time()
 
                 if self._speech_start_time is None:
-                    self._speech_start_time = (
-                        time.time() - ev.extra_inference_time
-                    )
+                    self._speech_start_time = time.time()
 
         elif ev.type == vad.VADEventType.END_OF_SPEECH:
             with trace.use_span(self._ensure_user_turn_span()):
                 self._hooks.on_end_of_speech(ev)
 
             self._speaking = False
-            self._last_speaking_time = (
-                time.time() - ev.silence_duration - ev.extra_inference_time
-            )
+            self._last_speaking_time = time.time() - ev.silence_duration
 
             if self._vad_base_turn_detection or (
                 self._turn_detection_mode == "stt" and self._user_turn_committed
