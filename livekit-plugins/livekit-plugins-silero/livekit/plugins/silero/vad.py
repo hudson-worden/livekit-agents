@@ -455,6 +455,7 @@ class VADStream(agents.vad.VADStream):
                         speech_duration=pub_speech_duration,
                         probability=p,
                         inference_duration=inference_duration,
+                        extra_inference_time=extra_inference_time,
                         frames=[
                             rtc.AudioFrame(
                                 data=input_frame.data[:to_copy_int].tobytes(),
@@ -488,6 +489,7 @@ class VADStream(agents.vad.VADStream):
                                     timestamp=pub_timestamp,
                                     silence_duration=pub_silence_duration,
                                     speech_duration=pub_speech_duration,
+                                    extra_inference_time=extra_inference_time,
                                     frames=[_copy_speech_buffer()],
                                     speaking=True,
                                 )
@@ -516,6 +518,7 @@ class VADStream(agents.vad.VADStream):
                                 speech_duration=max(
                                     0.0, pub_speech_duration - silence_threshold_duration
                                 ),
+                                extra_inference_time=extra_inference_time,
                                 frames=[_copy_speech_buffer()],
                                 speaking=False,
                             )

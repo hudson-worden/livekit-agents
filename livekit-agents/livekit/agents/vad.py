@@ -58,6 +58,12 @@ class VADEvent:
     inference_duration: float = 0.0
     """Time taken to perform the inference, in seconds (only for `INFERENCE_DONE` events)."""
 
+    extra_inference_time: float = 0.0
+    """Cumulative inference delay in seconds, representing how far behind real-time
+    the VAD inference pipeline has fallen. This is the excess time accumulated when
+    inference takes longer than the audio window duration. Used for additional
+    timestamp backdating to compensate for processing lag."""
+
     speaking: bool = False
     """Indicates whether speech was detected in the frames."""
 

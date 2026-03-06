@@ -1287,7 +1287,9 @@ class AgentActivity(RecognitionHooks):
     def on_start_of_speech(self, ev: vad.VADEvent | None) -> None:
         speech_start_time = time.time()
         if ev:
-            speech_start_time = speech_start_time - ev.speech_duration
+            speech_start_time = (
+                speech_start_time - ev.speech_duration - ev.extra_inference_time
+            )
         self._session._update_user_state("speaking", last_speaking_time=speech_start_time)
         self._user_silence_event.clear()
         self._stt_eos_received = False
@@ -1300,7 +1302,9 @@ class AgentActivity(RecognitionHooks):
     def on_end_of_speech(self, ev: vad.VADEvent | None) -> None:
         speech_end_time = time.time()
         if ev:
-            speech_end_time = speech_end_time - ev.silence_duration
+            speech_end_time = (
+                speech_end_time - ev.silence_duration - ev.extra_inference_time
+            )
         else:
             self._stt_eos_received = True
 
