@@ -16,7 +16,7 @@ from livekit.agents.llm.realtime import MessageGeneration
 from livekit.agents.metrics.base import Metadata
 
 from .. import inference, llm, stt, tts, utils, vad
-from ..llm.chat_context import Instructions
+from ..llm.chat_context import Instructions, MetricsReport
 from ..llm.tool_context import (
     StopResponse,
     ToolFlag,
@@ -1878,7 +1878,7 @@ class AgentActivity(RecognitionHooks):
             transcript_confidence=info.transcript_confidence,
         )
 
-        metrics_report: llm.MetricsReport = self._init_metrics_from_end_of_turn(info)
+        metrics_report: MetricsReport = self._init_metrics_from_end_of_turn(info)
 
         if user_message is not None:
             user_message.metrics = metrics_report
@@ -2229,7 +2229,7 @@ class AgentActivity(RecognitionHooks):
         current_span.set_attribute(trace_types.ATTR_RESPONSE_TEXT, forwarded_text)
 
         if forwarded_text and add_to_chat_ctx:
-            assistant_metrics: llm.MetricsReport = {}
+            assistant_metrics: MetricsReport = {}
 
             if tts_gen_data and tts_gen_data.ttfb is not None:
                 assistant_metrics["tts_node_ttfb"] = tts_gen_data.ttfb
@@ -2269,7 +2269,7 @@ class AgentActivity(RecognitionHooks):
         model_settings: ModelSettings,
         new_message: llm.ChatMessage | None = None,
         instructions: str | Instructions | None = None,
-        _previous_user_metrics: llm.MetricsReport | None = None,
+        _previous_user_metrics: MetricsReport | None = None,
         _previous_tools_messages: Sequence[llm.FunctionCall | llm.FunctionCallOutput] | None = None,
     ) -> None:
         with tracer.start_as_current_span(
@@ -2300,7 +2300,7 @@ class AgentActivity(RecognitionHooks):
         model_settings: ModelSettings,
         new_message: llm.ChatMessage | None = None,
         instructions: str | Instructions | None = None,
-        _previous_user_metrics: llm.MetricsReport | None = None,
+        _previous_user_metrics: MetricsReport | None = None,
         _previous_tools_messages: Sequence[llm.FunctionCall | llm.FunctionCallOutput] | None = None,
     ) -> None:
         from .agent import ModelSettings
@@ -2378,7 +2378,7 @@ class AgentActivity(RecognitionHooks):
 
         # add new message to chat context if the speech is scheduled
 
-        user_metrics: llm.MetricsReport | None = _previous_user_metrics
+        user_metrics: MetricsReport | None = _previous_user_metrics
         if new_message is not None and speech_handle.scheduled:
             self._agent._chat_ctx.insert(new_message)
             self._session._conversation_item_added(new_message)
@@ -2444,7 +2444,7 @@ class AgentActivity(RecognitionHooks):
 
             # purely used for realtime console rendering (metrics are shown
             # as soon as the agent starts speaking, before playout finishes)
-            early_metrics: llm.MetricsReport = {}
+            early_metrics: MetricsReport = {}
             if llm_gen_data.ttft is not None:
                 early_metrics["llm_node_ttft"] = llm_gen_data.ttft
             if tts_gen_data and tts_gen_data.ttfb is not None:
@@ -2510,7 +2510,7 @@ class AgentActivity(RecognitionHooks):
             )
 
         stopped_speaking_at = time.time()
-        assistant_metrics: llm.MetricsReport = {}
+        assistant_metrics: MetricsReport = {}
 
         if self.llm:
             assistant_metrics["llm_metadata"] = {
@@ -3082,7 +3082,7 @@ class AgentActivity(RecognitionHooks):
         def _create_assistant_message(
             message_id: str, forwarded_text: str, interrupted: bool
         ) -> llm.ChatMessage:
-            assistant_metrics: llm.MetricsReport = {}
+            assistant_metrics: MetricsReport = {}
 
             if stopped_speaking_at and started_speaking_at:
                 assistant_metrics["started_speaking_at"] = started_speaking_at
@@ -3454,8 +3454,8 @@ class AgentActivity(RecognitionHooks):
     def tts(self) -> tts.TTS | None:
         return self._agent.tts if is_given(self._agent.tts) else self._session.tts
 
-    def _init_metrics_from_end_of_turn(self, info: _EndOfTurnInfo) -> llm.MetricsReport:
-        metrics_report: llm.MetricsReport = {}
+    def _init_metrics_from_end_of_turn(self, info: _EndOfTurnInfo) -> MetricsReport:
+        metrics_report: MetricsReport = {}
         if self.stt:
             metrics_report["stt_metadata"] = {
                 "model_name": self.stt.model,
